@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAMPUS BAZAAR</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        :root { --accent: #3b82f6; --bg: #0b0f1a; --card: #161b2a; }
+        body { background-color: var(--bg); color: #f8fafc; font-family: 'Plus Jakarta Sans', sans-serif; overflow-x: hidden; }
+        .glass-nav { background: rgba(11, 15, 26, 0.8); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+        .card { background: var(--card); border: 1px solid rgba(255, 255, 255, 0.05); transition: all 0.3s ease; }
+        .card:hover { border-color: rgba(59, 130, 246, 0.4); transform: translateY(-4px); }
+        .btn-action { background: var(--accent); color: white; font-weight: 700; border-radius: 12px; transition: all 0.2s; }
+        .modal-blur { backdrop-filter: blur(8px); background: rgba(2, 6, 23, 0.85); }
+        .search-input { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .search-input:focus { border-color: var(--accent); background: rgba(255, 255, 255, 0.06); }
+        @keyframes popIn { from { opacity: 0; transform: translateY(-10px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .animate-pop { animation: popIn 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    </style>
+</head>
+<body onload="initApp()">
+
+    <div id="notif-container" class="fixed top-6 left-1/2 -translate-x-1/2 z-[500] w-full max-w-xs space-y-3 pointer-events-none"></div>
+
+    <div id="confirm-modal" class="fixed inset-0 modal-blur hidden items-center justify-center z-[400] p-4">
+        <div class="card p-8 rounded-[2rem] max-w-sm w-full text-center animate-pop">
+            <div class="w-12 h-12 bg-blue-500/10 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4"><i class="fa fa-question-circle text-xl"></i></div>
+            <h3 class="text-lg font-bold text-white mb-2" id="confirm-title">Confirm Action</h3>
+            <p class="text-xs text-gray-400 mb-8" id="confirm-msg"></p>
+            <div class="flex gap-3">
+                <button id="confirm-cancel" class="flex-1 py-3 rounded-xl bg-white/5 text-white text-[10px] font-bold uppercase hover:bg-white/10 transition">Cancel</button>
+                <button id="confirm-ok" class="flex-1 py-3 rounded-xl bg-blue-600 text-white text-[10px] font-bold uppercase hover:bg-blue-500 transition">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="auth-screen" class="fixed inset-0 z-[200] bg-[#0b0f1a] flex items-center justify-center p-6 hidden">
+        <div class="card p-10 rounded-[2.5rem] max-w-md w-full text-center animate-pop">
+            <div class="w-16 h-16 bg-blue-600 rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-lg"><i class="fa fa-graduation-cap text-2xl text-white"></i></div>
+            <div id="auth-form-content"></div>
+        </div>
+    </div>
+
+    <nav id="main-nav" class="glass-nav px-4 md:px-8 py-4 sticky top-0 z-50 hidden">
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3 cursor-pointer" onclick="renderHome()">
+                <div class="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center"><i class="fa fa-shop text-white text-sm"></i></div>
+                <span class="font-extrabold text-lg tracking-tighter text-white uppercase">Campus<span class="text-blue-500">Bazaar</span></span>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="text-right hidden sm:block"><p id="user-display" class="text-xs font-bold text-white"></p><p class="text-[10px] text-blue-500 font-bold uppercase">Active</p></div>
+                <button onclick="logout()" class="w-9 h-9 flex items-center justify-center rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition"><i class="fa fa-arrow-right-from-bracket text-xs"></i></button>
+            </div>
+        </div>
+    </nav>
+
+    <main id="main-content" class="max-w-7xl mx-auto p-4 md:p-8 min-h-screen"></main>
+
+    <div id="modal" class="fixed inset-0 modal-blur hidden items-center justify-center z-[100] p-4" onclick="if(event.target === this) closeModal()">
+        <div class="card p-8 rounded-[2rem] max-w-lg w-full relative max-h-[90vh] overflow-y-auto animate-pop">
+            <button onclick="closeModal()" class="absolute top-6 right-8 text-gray-500 hover:text-white transition text-2xl">&times;</button>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyD_tgOiJXN6ITjRgBQEWfA2CtRKmeWV0OQ",
+            authDomain: "bazaar-d968d.firebaseapp.com",
+            projectId: "bazaar-d968d",
+            storageBucket: "bazaar-d968d.firebasestorage.app",
+            messagingSenderId: "343357933548",
+            appId: "1:343357933548:web:45ce015197d1e48a83e2c9"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        let currentUser = JSON.parse(sessionStorage.getItem('cb_session')) || null;
+        let allMarketProducts = [];
+
+        function notify(msg, type = 'error') {
+            const container = document.getElementById('notif-container');
+            const el = document.createElement('div');
+            el.className = `p-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-pop pointer-events-auto ${type === 'success' ? 'bg-emerald-600' : 'bg-red-600'}`;
+            el.innerHTML = `<i class="fa ${type === 'success' ? 'fa-check-circle' : 'fa-circle-exclamation'} text-white"></i><span class="text-white text-[11px] font-black uppercase tracking-wide">${msg}</span>`;
+            container.appendChild(el);
+            setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 500); }, 3000);
+        }
+
+        function askConfirm(title, msg, onConfirm) {
+            const m = document.getElementById('confirm-modal');
+            document.getElementById('confirm-title').innerText = title;
+            document.getElementById('confirm-msg').innerText = msg;
+            m.classList.replace('hidden', 'flex');
+            document.getElementById('confirm-ok').onclick = () => { m.classList.replace('flex', 'hidden'); onConfirm(); };
+            document.getElementById('confirm-cancel').onclick = () => m.classList.replace('flex', 'hidden');
+        }
+
+        function initApp() {
+            if (!currentUser) showLogin();
+            else {
+                document.getElementById('auth-screen').classList.add('hidden');
+                document.getElementById('main-nav').classList.remove('hidden');
+                document.getElementById('user-display').innerText = currentUser.username.toUpperCase();
+                renderHome();
+            }
+        }
+
+        function showLogin() {
+            document.getElementById('auth-screen').classList.remove('hidden');
+            document.getElementById('auth-form-content').innerHTML = `<h2 class="text-2xl font-bold mb-1">Login</h2><p class="text-gray-500 text-xs mb-8">Welcome back</p><div class="space-y-3 text-left"><input type="text" id="loginUser" placeholder="Username" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-white outline-none focus:border-blue-500"><input type="password" id="loginPass" placeholder="Password" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-white outline-none focus:border-blue-500"><button onclick="handleLogin()" class="w-full btn-action py-4 mt-2 uppercase text-[11px]">Access Bazaar</button><p class="text-center text-[11px] text-gray-500 mt-4">New? <span onclick="showRegister()" class="text-blue-500 cursor-pointer font-bold">Register</span></p></div>`;
+        }
+
+        function showRegister() {
+            document.getElementById('auth-form-content').innerHTML = `<h2 class="text-2xl font-bold mb-1">Register</h2><p class="text-gray-500 text-xs mb-8">Join the community</p><div class="space-y-3 text-left"><input type="text" id="regUser" placeholder="Username" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-white outline-none"><input type="password" id="regPass" placeholder="Password" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-white outline-none"><select id="regRole" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-gray-400 outline-none"><option value="buyer">I want to Buy</option><option value="seller">I want to Sell</option></select><button onclick="handleRegister()" class="w-full btn-action py-4 mt-2 uppercase text-[11px]">Create Account</button><p class="text-center text-[11px] text-gray-500 mt-4">Member? <span onclick="showLogin()" class="text-blue-500 cursor-pointer font-bold">Sign In</span></p></div>`;
+        }
+
+        async function handleLogin() {
+            const u = document.getElementById('loginUser').value, p = document.getElementById('loginPass').value;
+            const snap = await db.collection('users').where('username', '==', u).where('password', '==', p).get();
+            if(!snap.empty) { sessionStorage.setItem('cb_session', JSON.stringify(snap.docs[0].data())); location.reload(); }
+            else notify("Invalid Credentials");
+        }
+
+        async function handleRegister() {
+            const u = document.getElementById('regUser').value, p = document.getElementById('regPass').value, r = document.getElementById('regRole').value;
+            if(!u || !p) return notify("Fields required");
+            await db.collection('users').add({ username: u, password: p, role: r });
+            notify("Success! Please Login", "success"); showLogin();
+        }
+
+        function logout() { sessionStorage.removeItem('cb_session'); location.reload(); }
+        function renderHome() { currentUser.role === 'buyer' ? renderBuyerShop() : renderSellerHub(); }
+
+        async function renderBuyerShop() {
+            const container = document.getElementById('main-content');
+            container.innerHTML = `<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8"><div><h1 class="text-2xl font-extrabold uppercase">Marketplace</h1><p class="text-[11px] text-blue-500 font-bold uppercase tracking-widest">Available Items</p></div><div class="flex-1 max-w-md relative group"><i class="fa fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 group-focus-within:text-blue-500 transition"></i><input type="text" id="shopSearch" oninput="handleSearch(this.value)" placeholder="Search products..." class="w-full search-input py-3 pl-12 pr-4 rounded-2xl text-white outline-none text-sm"></div><div class="flex bg-white/5 p-1 rounded-xl"><button onclick="renderBuyerOrders()" class="px-4 py-2 text-[10px] font-bold text-gray-400 hover:text-white uppercase">Orders</button><button onclick="renderBuyerHistory()" class="px-4 py-2 text-[10px] font-bold text-gray-400 hover:text-white uppercase ml-1">History</button></div></div><div id="grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"></div>`;
+            const snap = await db.collection('products').where('stock', '>', 0).get();
+            allMarketProducts = [];
+            snap.forEach(doc => allMarketProducts.push({ id: doc.id, ...doc.data() }));
+            displayProducts(allMarketProducts);
+        }
+
+        function handleSearch(query) { displayProducts(allMarketProducts.filter(p => p.name.toLowerCase().includes(query.toLowerCase()))); }
+
+        function displayProducts(products) {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = products.length ? "" : '<p class="col-span-full text-center text-gray-500 py-10">No items found.</p>';
+            products.forEach(p => {
+                grid.innerHTML += `<div class="card p-3 rounded-[1.5rem] flex flex-col animate-pop"><img src="${p.img}" class="w-full aspect-square object-cover rounded-[1rem] mb-3"><div class="flex justify-between items-start mb-1 px-1"><h3 class="font-bold text-sm text-white/90 uppercase">${p.name}</h3><span class="text-blue-500 font-bold text-sm">₱${p.price}</span></div><p class="text-[10px] text-gray-500 font-bold uppercase px-1 mb-4">Stock: ${p.stock}</p><button onclick="openCheckout('${p.id}')" class="w-full py-2.5 rounded-xl bg-white/5 hover:bg-blue-600 text-white text-[10px] font-black uppercase transition-all">Buy Now</button></div>`;
+            });
+        }
+
+        async function openCheckout(id) {
+            const doc = await db.collection('products').doc(id).get(), p = doc.data();
+            document.getElementById('modal-body').innerHTML = `
+                <h2 class="text-xl font-bold text-white mb-6 uppercase">${p.name}</h2>
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-white/5 p-4 rounded-2xl">
+                            <label class="text-[9px] text-gray-500 uppercase font-black block">Quantity (Available: ${p.stock})</label>
+                            <input type="number" id="buyQty" value="1" min="1" max="${p.stock}" 
+                                oninput="updateCheckoutTotal(${p.price}, ${p.stock})"
+                                class="bg-transparent text-white font-bold outline-none w-full">
+                        </div>
+                        <div class="bg-blue-600/10 p-4 rounded-2xl">
+                            <label class="text-[9px] text-blue-500 uppercase font-black block">Total Price</label>
+                            <div class="text-white font-black" id="checkoutTotal">₱${p.price}</div>
+                        </div>
+                    </div>
+                    <input type="text" id="orderLoc" placeholder="Meetup Location" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-white text-sm outline-none">
+                    <button id="orderConfirmBtn" onclick="confirmOrder('${id}')" class="w-full btn-action py-4 uppercase text-[11px]">Confirm Order</button>
+                </div>`;
+            document.getElementById('modal').style.display = 'flex';
+        }
+
+        function updateCheckoutTotal(price, maxStock) {
+            const qtyInput = document.getElementById('buyQty');
+            const totalDisplay = document.getElementById('checkoutTotal');
+            const btn = document.getElementById('orderConfirmBtn');
+            let val = parseInt(qtyInput.value);
+
+            if (val > maxStock) {
+                notify(`Only ${maxStock} items available!`);
+                qtyInput.value = maxStock;
+                val = maxStock;
+            }
+            if (val < 1 || isNaN(val)) {
+                totalDisplay.innerText = `₱0`;
+                btn.disabled = true;
+                btn.style.opacity = "0.5";
+            } else {
+                totalDisplay.innerText = `₱${price * val}`;
+                btn.disabled = false;
+                btn.style.opacity = "1";
+            }
+        }
+
+        async function confirmOrder(pId) {
+            const qty = parseInt(document.getElementById('buyQty').value), loc = document.getElementById('orderLoc').value;
+            if(!loc) return notify("Meetup Location required");
+            
+            const pRef = db.collection('products').doc(pId), pDoc = await pRef.get(), p = pDoc.data();
+            
+            if (qty > p.stock) return notify("Stock updated, item unavailable in that quantity.");
+
+            await db.collection('orders').add({ 
+                productId: pId, itemName: p.name, itemImg: p.img, price: p.price, quantity: qty, total: p.price * qty, 
+                seller: p.seller, buyer: currentUser.username, location: loc, status: 'Pending', date: new Date().toLocaleDateString() 
+            });
+            await pRef.update({ stock: p.stock - qty });
+            closeModal(); notify("Order Placed!", "success"); renderBuyerOrders();
+        }
+
+        async function renderBuyerOrders() {
+            const container = document.getElementById('main-content');
+            container.innerHTML = `<button onclick="renderBuyerShop()" class="text-blue-500 mb-6 text-xs font-bold uppercase"><i class="fa fa-arrow-left"></i> Market</button><h2 class="font-bold text-xl mb-6 uppercase">Active Orders</h2><div id="list" class="space-y-3"></div>`;
+            const snap = await db.collection('orders').where('buyer', '==', currentUser.username).get();
+            if(snap.empty) document.getElementById('list').innerHTML = `<p class="text-gray-500 text-sm">No active orders.</p>`;
+            snap.forEach(doc => {
+                const o = doc.data();
+                document.getElementById('list').innerHTML += `<div class="card p-4 rounded-2xl flex justify-between items-center animate-pop"><div class="flex items-center gap-4"><img src="${o.itemImg}" class="w-12 h-12 rounded-xl object-cover"><div><p class="font-bold text-white text-sm uppercase">${o.itemName} (x${o.quantity})</p><p class="text-[10px] text-gray-500 uppercase">${o.location}</p></div></div><div class="flex items-center gap-3"><span class="px-3 py-1 rounded-full text-[9px] font-bold ${o.status === 'On the Way' ? 'bg-orange-500/10 text-orange-500' : 'bg-blue-500/10 text-blue-500'} uppercase">${o.status}</span>${o.status === 'Pending' ? `<button onclick="cancelOrder('${doc.id}')" class="bg-red-500/10 text-red-500 px-4 py-2 rounded-lg text-[9px] font-black uppercase hover:bg-red-500 hover:text-white transition">Cancel</button>` : ''}${o.status === 'On the Way' ? `<button onclick="markReceived('${doc.id}')" class="bg-emerald-600 text-white px-4 py-2 rounded-lg text-[9px] font-black uppercase">Received</button>` : ''}</div></div>`;
+            });
+        }
+
+        async function cancelOrder(id) {
+            askConfirm("Cancel Order?", "Items will return to seller's stock.", async () => {
+                const oRef = db.collection('orders').doc(id), oSnap = await oRef.get(), o = oSnap.data();
+                const pRef = db.collection('products').doc(o.productId), pSnap = await pRef.get();
+                if(pSnap.exists) await pRef.update({ stock: pSnap.data().stock + o.quantity });
+                await oRef.delete(); notify("Order Cancelled", "success"); renderBuyerOrders();
+            });
+        }
+
+        async function markReceived(id) {
+            const ref = db.collection('orders').doc(id), snap = await ref.get(), data = snap.data();
+            await db.collection('history').add({ ...data, status: 'Completed', completedAt: new Date().toLocaleDateString() });
+            await ref.delete(); notify("Received!", "success"); renderBuyerHistory();
+        }
+
+        async function renderBuyerHistory() {
+            const container = document.getElementById('main-content');
+            container.innerHTML = `<button onclick="renderBuyerShop()" class="text-blue-500 mb-6 text-xs font-bold uppercase"><i class="fa fa-arrow-left"></i> Market</button><h2 class="font-bold text-xl mb-6 uppercase">Archive</h2><div id="list" class="grid md:grid-cols-2 gap-4"></div>`;
+            const snap = await db.collection('history').where('buyer', '==', currentUser.username).get();
+            snap.forEach(doc => {
+                const h = doc.data();
+                document.getElementById('list').innerHTML += `<div class="card p-5 rounded-2xl border-l-4 border-emerald-500 flex justify-between animate-pop"><div><p class="font-bold text-white uppercase text-sm">${h.itemName}</p><p class="text-[10px] text-gray-500">Collected: ${h.completedAt}</p></div><p class="text-emerald-500 font-black">₱${h.total}</p></div>`;
+            });
+        }
+
+        async function renderSellerHub() {
+            const container = document.getElementById('main-content');
+            container.innerHTML = `<div class="flex justify-between items-center mb-10"><div><h1 class="text-2xl font-bold uppercase">Seller Hub</h1><p class="text-[11px] text-blue-500 font-bold uppercase tracking-widest">Inventory</p></div><button onclick="openCreateForm()" class="btn-action px-6 py-2.5 text-[11px] uppercase">New Item</button></div><div class="grid lg:grid-cols-3 gap-8"><div class="lg:col-span-2"><h3 class="text-[10px] font-black text-gray-500 uppercase mb-4">Orders</h3><div id="requests" class="space-y-3"></div></div><div><h3 class="text-[10px] font-black text-gray-500 uppercase mb-4">Stock</h3><div id="inventory" class="card rounded-2xl divide-y divide-white/5"></div></div></div>`;
+            const pSnap = await db.collection('products').where('seller', '==', currentUser.username).get();
+            pSnap.forEach(doc => {
+                const p = doc.data();
+                document.getElementById('inventory').innerHTML += `<div class="p-4 flex justify-between items-center animate-pop"><div><p class="text-xs font-bold text-white uppercase">${p.name}</p><p class="text-[10px] text-blue-500 font-bold">₱${p.price} | Stock: ${p.stock}</p></div><div class="flex gap-2"><button onclick="editProduct('${doc.id}')" class="w-8 h-8 flex items-center justify-center rounded-lg bg-blue-500/10 text-blue-500"><i class="fa fa-pen text-[10px]"></i></button><button onclick="handleDelete('${doc.id}')" class="w-8 h-8 flex items-center justify-center rounded-lg bg-red-500/10 text-red-500"><i class="fa fa-trash text-[10px]"></i></button></div></div>`;
+            });
+            const oSnap = await db.collection('orders').where('seller', '==', currentUser.username).get();
+            if(oSnap.empty) document.getElementById('requests').innerHTML = `<p class="text-gray-500 text-sm">No incoming orders.</p>`;
+            oSnap.forEach(doc => {
+                const o = doc.data();
+                document.getElementById('requests').innerHTML += `<div class="card p-4 flex justify-between items-center animate-pop"><div><p class="font-bold text-sm text-white uppercase">${o.itemName} (x${o.quantity})</p><p class="text-[9px] text-gray-500 uppercase">${o.buyer} @ ${o.location}</p></div><button onclick="shipOrder('${doc.id}')" class="text-[9px] font-black uppercase px-4 py-2 rounded-lg bg-orange-500/10 text-orange-500" ${o.status !== 'Pending' ? 'disabled' : ''}>${o.status === 'Pending' ? 'Ship' : 'Shipped'}</button></div>`;
+            });
+        }
+
+        async function editProduct(id) {
+            const doc = await db.collection('products').doc(id).get(), p = doc.data();
+            document.getElementById('modal-body').innerHTML = `<h2 class="text-xl font-bold text-white mb-6 uppercase">Edit Item</h2><div class="space-y-4"><input type="text" id="editName" value="${p.name}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-white text-sm outline-none"><div class="grid grid-cols-2 gap-4"><input type="number" id="editPrice" value="${p.price}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-white text-sm outline-none"><input type="number" id="editStock" value="${p.stock}" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-white text-sm outline-none"></div><p class="text-[9px] text-gray-500 uppercase">New Image (Optional)</p><input type="file" id="editImg" accept="image/*" class="text-[10px] text-gray-400"><button onclick="saveEdit('${id}')" class="w-full btn-action py-4 uppercase text-[11px]">Update Listing</button></div>`;
+            document.getElementById('modal').style.display = 'flex';
+        }
+
+        async function saveEdit(id) {
+            const n = document.getElementById('editName').value, p = document.getElementById('editPrice').value, s = document.getElementById('editStock').value, f = document.getElementById('editImg').files[0];
+            const data = { name: n, price: parseFloat(p), stock: parseInt(s) };
+            if(f) {
+                const r = new FileReader(); r.onload = async (e) => { data.img = e.target.result; await db.collection('products').doc(id).update(data); closeModal(); notify("Updated!", "success"); renderSellerHub(); };
+                r.readAsDataURL(f);
+            } else { await db.collection('products').doc(id).update(data); closeModal(); notify("Updated!", "success"); renderSellerHub(); }
+        }
+
+        async function shipOrder(id) { 
+            const ref = db.collection('orders').doc(id), snap = await ref.get();
+            if(!snap.exists) return notify("Order was cancelled by buyer.");
+            await ref.update({ status: 'On the Way' }); 
+            notify("Status Updated", "success"); 
+            renderSellerHub(); 
+        }
+
+        function handleDelete(id) { askConfirm("Delete Item?", "Action is permanent.", async () => { await db.collection('products').doc(id).delete(); notify("Deleted", "success"); renderSellerHub(); }); }
+        function openCreateForm() { document.getElementById('modal-body').innerHTML = `<h2 class="text-xl font-bold text-white mb-6 uppercase">New Item</h2><div class="space-y-4"><input type="text" id="newName" placeholder="Name" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-white text-sm outline-none"><div class="grid grid-cols-2 gap-4"><input type="number" id="newPrice" placeholder="Price" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-white text-sm outline-none"><input type="number" id="newStock" placeholder="Stock" class="w-full bg-white/5 border border-white/10 p-4 rounded-xl text-white text-sm outline-none"></div><input type="file" id="newImg" accept="image/*" class="text-[10px] text-gray-400"><button onclick="processProduct()" class="w-full btn-action py-4 uppercase text-[11px]">List Item</button></div>`; document.getElementById('modal').style.display = 'flex'; }
+        async function processProduct() {
+            const n = document.getElementById('newName').value, p = document.getElementById('newPrice').value, s = document.getElementById('newStock').value, f = document.getElementById('newImg').files[0];
+            if(!n || !f) return notify("Fields required");
+            const r = new FileReader(); r.onload = async (e) => { await db.collection('products').add({ name: n, price: parseFloat(p), stock: parseInt(s), img: e.target.result, seller: currentUser.username }); closeModal(); notify("Listed!", "success"); renderSellerHub(); };
+            r.readAsDataURL(f);
+        }
+        function closeModal() { document.getElementById('modal').style.display = 'none'; }
+    </script>
+</body>
+</html>
